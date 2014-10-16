@@ -149,9 +149,16 @@ class MissingT
   end
 
   def extract_i18n_queries(file)
+    relative_path = file.split(/\//)
+    relative_path.shift if relative_path[0] == 'app'
+    relative_path.shift if %w(helpers controllers models views).include?(relative_path[0])
+    relative_path[-1].gsub!(/\..*$/, '')
+    relative_path[-1].gsub!(/^_/, '')
+    relative_path[-1].gsub!(/_(controller|helper)$/, '')
+    relative_path = relative_path.join('.')
     ({}).tap do |queries|
       @reader.read(File.expand_path(file)) do |line|
-        qs = scan_line(line)
+        qs = scan_line(line, relative_path)
         queries.merge!(qs)
       end
     end
@@ -178,13 +185,16 @@ private
     "#{lang}.#{query}"
   end
 
-  def scan_line(line)
+  def scan_line(line, relative_path)
     with_parens = /[^\w]+(?:I18n\.translate|I18n\.t|translate|t)\s*\((['"](.*?)['"].*?)\)/
     no_parens = /[^\w]+(?:I18n\.translate|I18n\.t|translate|t)\s+(['"](.*?)['"].*?)/
     [with_parens, no_parens].each_with_object({}) do |pattern, extracted_queries|
       line.scan(pattern).each do |m|
         if m.any?
           message_string = m[1]
+          if message_string.match(/^\./)
+            message_string = relative_path + message_string
+          end
           _, *options = m[0].split(',')
           extracted_queries[message_string] = extract_default_value(options)
         end
