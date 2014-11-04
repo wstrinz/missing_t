@@ -11,17 +11,6 @@ def hashify(segments, value)
   end
 end
 
-def print_hash(h, level)
-  h.each_pair do |k,v|
-    if v.respond_to?(:each_pair)
-      puts %(#{" " * (level*2)}#{k}:)
-      print_hash(v, level+1)
-    else
-      puts %(#{" " * (level*2)}#{k}: #{v})
-    end
-  end
-end
-
 class Hash
   # idea snatched from deep_merge in Rails source code
   def deep_safe_merge(other_hash)
@@ -74,8 +63,7 @@ class MissingT
 
     missing.each do |language, missing_for_language|
       puts
-      puts "#{language}:"
-      print_hash(missing_for_language, 1)
+      puts({"#{language}" => missing_for_language}.to_yaml)
     end
   end
 
