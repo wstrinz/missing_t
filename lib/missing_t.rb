@@ -35,6 +35,128 @@ class Hash
 
 end
 
+class DefaultFinder
+  require 'parser/current'
+  require 'erb'
+
+  class << self
+
+    def tree_search(root, child_method = :children, &block)
+      return root if yield root
+
+      if root.respond_to?(child_method)
+        root.send(child_method).each do |c|
+          ret = tree_search(c, child_method, &block)
+          return ret if ret
+        end
+
+        nil
+      else
+        nil
+      end
+    end
+
+    def tree_find_all(root, child_method = :children, &block)
+      return [root] if yield root
+
+      if root.respond_to?(child_method)
+        # require 'pry'
+        root.send(child_method).map do |c|
+          # binding.pry unless tree_search(c, child_method, &block)
+          tree_find_all(c, child_method, &block).flatten
+        end.flatten
+      else
+        []
+      end
+    end
+
+    def find_method(root, methodName)
+      tree_search root do |n|
+        succ = n.is_a?(Parser::AST::Node) &&
+          n.type == :send &&
+          n.children[1] == methodName
+        succ
+      end
+    end
+
+    def find_methods(root, methodName)
+      tree_find_all root do |n|
+        succ = n.is_a?(Parser::AST::Node) &&
+          n.type == :send &&
+          n.children[1] == methodName
+        succ
+      end
+    end
+
+    def is_hash_with_key(node, key)
+      n = node
+      succ = n.is_a?(Parser::AST::Node) &&
+        n.type == :pair &&
+        n.children[0].is_a?(Parser::AST::Node) &&
+        n.children[0].children[0] == key
+      succ
+    end
+
+    def first_arg(node)
+      raise "not a send node (#{ node })" unless node.is_a?(Parser::AST::Node) && node.type == :send
+      node.children[2].children[0]
+    end
+
+    def findHashVal(root, key)
+      hash_node = tree_search root do |n|
+        is_hash_with_key n, key
+      end
+
+      if hash_node
+        val = hash_node.children[1].children[0]
+        if val.is_a? String
+          val
+        else
+          raise "unknown val: #{val}"
+        end
+      end
+    end
+
+    def erb_tree(file)
+      s=ERB.new File.read(file)
+      src = s.src.lines.to_a[1..-1].join
+      Parser::CurrentRuby.parse(src)
+    end
+
+    def find_translations(root)
+      tnodes = find_methods(root, :t)
+      if tnodes.length > 0
+        tnodes.inject({}) do |h, atrans|
+          key = first_arg(atrans).gsub(/^\./,'')
+
+          dval = findHashVal(atrans, :default)
+          h[key] =  dval
+
+          h
+        end
+      end
+    end
+
+    def add_missing_defaults(file, current)
+      ret = current.dup
+      begin
+        ts = find_translations(erb_tree(file))
+        ret.keys.each do |k|
+          if ret[k] == '' && parsed_val = ts[k.split('.').last]
+            ret[k] = parsed_val.encode(Encoding::US_ASCII)
+          end
+        end
+
+        ret
+      rescue Parser::SyntaxError => e
+        # sometimes erb fails to parse.
+        # this probably shouldn't crash the program :)
+        ret
+      end
+    end
+  end
+end
+
 class MissingT
 
   class FileReader
@@ -56,6 +178,8 @@ class MissingT
   def run
     missing = {}
     collect_missing.each do |file, message_strings|
+      message_strings = DefaultFinder.add_missing_defaults(file, message_strings)
+
       message_strings.each do |message_string, value|
         missing.deep_safe_merge! hashify(message_string.split('.'), value)
       end
