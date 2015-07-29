@@ -37,7 +37,7 @@ end
 
 class DefaultFinder
   require 'parser/current'
-  require 'erb'
+  require 'action_view'
 
   class << self
 
@@ -118,8 +118,8 @@ class DefaultFinder
     end
 
     def erb_tree(file)
-      s=ERB.new File.read(file)
-      src = s.src.lines.to_a[1..-1].join
+      s = ActionView::Template::Handlers::Erubis.new File.read(file)
+      src = s.src
       Parser::CurrentRuby.parse(src)
     end
 
