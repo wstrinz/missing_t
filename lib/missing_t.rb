@@ -108,7 +108,13 @@ class DefaultFinder
       end
 
       if hash_node
-        val = hash_node.children[1].children[0]
+        valNode = hash_node.children[1]
+        if valNode.type == :dstr
+          val = valNode.children[1].children[0]
+        else
+          val = valNode.children[0]
+        end
+
         if val.is_a? String
           val
         else
