@@ -60,9 +60,7 @@ class DefaultFinder
       return [root] if yield root
 
       if root.respond_to?(child_method)
-        # require 'pry'
         root.send(child_method).map do |c|
-          # binding.pry unless tree_search(c, child_method, &block)
           tree_find_all(c, child_method, &block).flatten
         end.flatten
       else
@@ -118,7 +116,8 @@ class DefaultFinder
         if val.is_a? String
           val
         else
-          raise "unknown val: #{val}"
+          puts "unhandled val: #{val}"
+          ''
         end
       end
     end
@@ -144,6 +143,8 @@ class DefaultFinder
     end
 
     def add_missing_defaults(file, current)
+      return current if file.split(".").last == "haml"
+
       ret = current.dup
       begin
         ts = find_translations(erb_tree(file))
@@ -269,7 +270,8 @@ class MissingT
   def extract_i18n_queries(file)
     relative_path = file.split(/\//)
     relative_path.shift if relative_path[0] == 'app'
-    relative_path.shift if %w(helpers controllers models views).include?(relative_path[0])
+    relative_path.shift if %w(helpers controllers models views mailer).include?(relative_path[0])
+    relative_path.shift if %w(mailer).include?(relative_path[0])
     relative_path[-1].gsub!(/\..*$/, '')
     relative_path[-1].gsub!(/^_/, '')
     relative_path[-1].gsub!(/_(controller|helper)$/, '')
