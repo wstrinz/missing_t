@@ -100,20 +100,23 @@ class DefaultFinder
       node.children[2].children[0]
     end
 
-    def findHashVal(root, key)
+    def find_hash_val(root, key)
       hash_node = tree_search root do |n|
         is_hash_with_key n, key
       end
 
       if hash_node
         valNode = hash_node.children[1]
+
         if valNode.type == :dstr
           val = valNode.children[1].children[0]
+        elsif valNode.type == :array
+          val = valNode.children.map{|vc| vc.children.first}
         else
           val = valNode.children[0]
         end
 
-        if val.is_a? String
+        if val.is_a?(String) || val.is_a?(Array)
           val
         else
           raise "unhandled val: #{val}"
@@ -134,7 +137,7 @@ class DefaultFinder
         tnodes.inject({}) do |h, atrans|
           key = first_arg(atrans).gsub(/^\./,'')
 
-          dval = findHashVal(atrans, :default)
+          dval = find_hash_val(atrans, :default)
           h[key] =  dval
 
           h
@@ -164,6 +167,40 @@ class DefaultFinder
   end
 end
 
+class ScopeExtracter
+  require 'parser/current'
+  require 'pry'
+  class << self
+    def scope_for(parsed_translation_call)
+      DefaultFinder.find_hash_val(parsed_translation_call, :scope)
+    end
+
+    def first_arg(node)
+      node.children[2].children[0]
+    end
+
+    def get_scopes(file, current)
+      ret = current.dup
+
+      parsed = Parser::CurrentRuby.parse(File.read file)
+      tnodes = DefaultFinder.find_methods(parsed, :t)
+
+      ret.keys.each do |k|
+        find_k = k.split('.').last
+        tnode = tnodes.find{|n| first_arg(n) == find_k}
+
+        if tnode && new_scope = scope_for(tnode)
+          newk = "en.#{new_scope.join('.')}.#{find_k}"
+          ret[newk] = ret[k]
+          ret.delete(k)
+        end
+      end
+
+      ret
+    end
+  end
+end
+
 class MissingT
 
   class FileReader
@@ -189,6 +226,7 @@ class MissingT
     missing = {}
     collect_missing.each do |file, message_strings|
       message_strings = DefaultFinder.add_missing_defaults(file, message_strings)
+      message_strings = ScopeExtracter.get_scopes(file, message_strings)
 
       message_strings.each do |message_string, value|
         missing.deep_safe_merge! hashify(message_string.split('.'), value)
