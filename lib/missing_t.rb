@@ -116,7 +116,7 @@ class DefaultFinder
         if val.is_a? String
           val
         else
-          puts "unhandled val: #{val}"
+          raise "unhandled val: #{val}"
           ''
         end
       end
@@ -168,8 +168,11 @@ class MissingT
 
   class FileReader
     def read(file)
+      # ugh index counter
+      indx = 0
       IO.readlines(file).each do |line|
-        yield line
+        yield line, indx
+        indx += 1
       end
     end
   end
@@ -277,8 +280,8 @@ class MissingT
     relative_path[-1].gsub!(/_(controller|helper)$/, '')
     relative_path = relative_path.join('.')
     ({}).tap do |queries|
-      @reader.read(File.expand_path(file)) do |line|
-        qs = scan_line(line, relative_path)
+      @reader.read(File.expand_path(file)) do |line, linenum|
+        qs = scan_line(line, relative_path, file, linenum)
         queries.merge!(qs)
       end
     end
@@ -305,15 +308,28 @@ private
     "#{lang}.#{query}"
   end
 
-  def scan_line(line, relative_path)
+  def method_for_line(file, line_no)
+    # modified from https://github.com/glebm/i18n-tasks/blob/b03f972fb021b4c0c76534a085d9de2bf1984d27/lib/i18n/tasks/scanners/pattern_scanner.rb#L68
+    # note that this is still probably not quite right; rails uses action_name rather than method_name for controller lazy keys
+    method = File.readlines(file, encoding: 'UTF-8').first(line_no - 1).reverse_each.find { |x| x=~ /\bdef\b/ }
+    method &&= "." + method.strip.sub(/^def\s*/, '').sub(/[\(\s;].*$/, '')
+    method
+  end
+
+  def scan_line(line, relative_path, file, line_num)
     with_parens = /[^\w]+(?:I18n\.translate|I18n\.t|translate|t)\s*\((['"](.*?)['"].*?)\)/
     no_parens = /[^\w]+(?:I18n\.translate|I18n\.t|translate|t)\s+(['"](.*?)['"].*?)/
+    is_controller = File.expand_path(file)[/controllers/]
     [with_parens, no_parens].each_with_object({}) do |pattern, extracted_queries|
       line.scan(pattern).each do |m|
         if m.any?
           message_string = m[1]
           if message_string.match(/^\./)
-            message_string = relative_path + message_string
+            if is_controller
+              message_string = relative_path + method_for_line(file, line_num) + message_string
+            else
+              message_string = relative_path + message_string
+            end
           end
           _, *options = m[0].split(',')
           extracted_queries[message_string] = extract_default_value(options)
