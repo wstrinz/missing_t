@@ -179,10 +179,19 @@ class ScopeExtracter
       node.children[2].children[0]
     end
 
-    def get_scopes(file, current)
+    def get_scopes(file, current, prepend_lang)
+      return current if current.length == 0
+
       ret = current.dup
 
-      parsed = Parser::CurrentRuby.parse(File.read file)
+      if File.extname(file) == '.erb'
+        parsed = DefaultFinder.erb_tree(file)
+      elsif File.extname(file) == '.haml'
+        return ret
+      else
+        parsed = Parser::CurrentRuby.parse(File.read file)
+      end
+
       tnodes = DefaultFinder.find_methods(parsed, :t)
 
       ret.keys.each do |k|
@@ -190,7 +199,10 @@ class ScopeExtracter
         tnode = tnodes.find{|n| first_arg(n) == find_k}
 
         if tnode && new_scope = scope_for(tnode)
-          newk = "en.#{new_scope.join('.')}.#{find_k}"
+          newk = "#{new_scope.join('.')}.#{find_k}"
+          if prepend_lang
+            newk = "en.#{newk}"
+          end
           ret[newk] = ret[k]
           ret.delete(k)
         end
@@ -226,7 +238,7 @@ class MissingT
     missing = {}
     collect_missing.each do |file, message_strings|
       message_strings = DefaultFinder.add_missing_defaults(file, message_strings)
-      message_strings = ScopeExtracter.get_scopes(file, message_strings)
+      # message_strings = ScopeExtracter.get_scopes(file, message_strings, true)
 
       message_strings.each do |message_string, value|
         missing.deep_safe_merge! hashify(message_string.split('.'), value)
@@ -269,7 +281,9 @@ class MissingT
   def translation_queries
     files_with_i18n_queries.each_with_object({}) do |file, queries|
       queries_in_file = extract_i18n_queries(file)
+
       if queries_in_file.any?
+        queries_in_file = ScopeExtracter.get_scopes(file, queries_in_file, false)
         queries[file] = queries_in_file
       end
     end
