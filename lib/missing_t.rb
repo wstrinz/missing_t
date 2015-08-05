@@ -116,12 +116,7 @@ class DefaultFinder
           val = valNode.children[0]
         end
 
-        if val.is_a?(String) || val.is_a?(Array)
-          val
-        else
-          raise "unhandled val: #{val}"
-          ''
-        end
+        val
       end
     end
 
@@ -137,20 +132,33 @@ class DefaultFinder
         tnodes.inject({}) do |h, atrans|
           key = first_arg(atrans).gsub(/^\./,'')
 
+
           dval = find_hash_val(atrans, :default)
+
+          unless dval && dval.is_a?(String)
+            raise "complex default values not supported and also a bad idea: #{dval}"
+          end
+
           h[key] =  dval
 
           h
         end
       end
-    end
+    end                              #|| val.is_a?(Array)
 
     def add_missing_defaults(file, current)
       return current if file.split(".").last == "haml"
 
       ret = current.dup
       begin
-        ts = find_translations(erb_tree(file))
+
+        if File.extname(file) == '.erb'
+          parsed = DefaultFinder.erb_tree(file)
+        else
+          parsed = Parser::CurrentRuby.parse(File.read file)
+        end
+
+        ts = find_translations(parsed)
         ret.keys.each do |k|
           if ret[k] == '' && parsed_val = ts[k.split('.').last]
             ret[k] = parsed_val.encode(Encoding::US_ASCII)
@@ -172,7 +180,11 @@ class ScopeExtracter
   require 'pry'
   class << self
     def scope_for(parsed_translation_call)
-      DefaultFinder.find_hash_val(parsed_translation_call, :scope)
+      found_scope = DefaultFinder.find_hash_val(parsed_translation_call, :scope)
+      if found_scope && !found_scope.is_a?(Array)
+        raise "unhandled scope structure: #{found_scope}"
+      end
+      found_scope
     end
 
     def first_arg(node)
